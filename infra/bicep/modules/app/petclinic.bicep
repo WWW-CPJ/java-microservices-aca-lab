@@ -4,19 +4,27 @@ param managedEnvironmentsName string
 param eurekaId string
 param configServerId string
 
-param mysqlDBId string
-param mysqlUserAssignedIdentityClientId string
+param mysqlDatabaseId string
 
 param acrRegistry string
 param acrIdentityId string
+
+param umiAppsClientId string
+param umiAppsIdentityId string
 
 param apiGatewayImage string
 param customersServiceImage string
 param vetsServiceImage string
 param visitsServiceImage string
 param adminServerImage string
+param chatAgentImage string
 
 param applicationInsightsConnString string = ''
+
+param enableOpenAi bool
+
+param openAiEndpoint string
+param openAiClientId string
 
 param targetPort int = 8080
 
@@ -36,7 +44,8 @@ module apiGateway '../containerapps/containerapp.bicep' = {
     configServerId: configServerId
     registry: acrRegistry
     image: apiGatewayImage
-    containerRegistryUserAssignedIdentityId: acrIdentityId
+    acrIdentityId: acrIdentityId
+    umiAppsIdentityId: umiAppsIdentityId
     external: true
     targetPort: targetPort
     createSqlConnection: false
@@ -53,7 +62,7 @@ module apiGateway '../containerapps/containerapp.bicep' = {
   }
 }
 
-module customerService '../containerapps/containerapp.bicep' = {
+module customersService '../containerapps/containerapp.bicep' = {
   name: 'customers-service'
   params: {
     location: environment.location
@@ -63,12 +72,13 @@ module customerService '../containerapps/containerapp.bicep' = {
     configServerId: configServerId
     registry: acrRegistry
     image: customersServiceImage
-    containerRegistryUserAssignedIdentityId: acrIdentityId
+    acrIdentityId: acrIdentityId
     external: false
     targetPort: targetPort
     createSqlConnection: true
-    mysqlDBId: mysqlDBId
-    mysqlUserAssignedIdentityClientId: mysqlUserAssignedIdentityClientId
+    mysqlDatabaseId: mysqlDatabaseId
+    umiAppsClientId: umiAppsClientId
+    umiAppsIdentityId: umiAppsIdentityId
     readinessProbeInitialDelaySeconds: 20
     livenessProbeInitialDelaySeconds: 40
     env: concat(env, empty(applicationInsightsConnString) ? [] : [
@@ -94,12 +104,13 @@ module vetsService '../containerapps/containerapp.bicep' = {
     configServerId: configServerId
     registry: acrRegistry
     image: vetsServiceImage
-    containerRegistryUserAssignedIdentityId: acrIdentityId
+    acrIdentityId: acrIdentityId
     external: false
     targetPort: targetPort
     createSqlConnection: true
-    mysqlDBId: mysqlDBId
-    mysqlUserAssignedIdentityClientId: mysqlUserAssignedIdentityClientId
+    mysqlDatabaseId: mysqlDatabaseId
+    umiAppsClientId: umiAppsClientId
+    umiAppsIdentityId: umiAppsIdentityId
     env: concat(env, empty(applicationInsightsConnString) ? [] : [
       {
         name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
@@ -123,12 +134,13 @@ module visitsService '../containerapps/containerapp.bicep' = {
     configServerId: configServerId
     registry: acrRegistry
     image: visitsServiceImage
-    containerRegistryUserAssignedIdentityId: acrIdentityId
+    acrIdentityId: acrIdentityId
     external: false
     targetPort: targetPort
     createSqlConnection: true
-    mysqlDBId: mysqlDBId
-    mysqlUserAssignedIdentityClientId: mysqlUserAssignedIdentityClientId
+    mysqlDatabaseId: mysqlDatabaseId
+    umiAppsClientId: umiAppsClientId
+    umiAppsIdentityId: umiAppsIdentityId
     env: concat(env, empty(applicationInsightsConnString) ? [] : [
       {
         name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
@@ -137,6 +149,45 @@ module visitsService '../containerapps/containerapp.bicep' = {
       {
         name: 'APPLICATIONINSIGHTS_CONFIGURATION_CONTENT'
         value: '{"role": {"name": "visits-service"}}'
+      }
+    ])
+  }
+}
+
+module chatAgent '../containerapps/containerapp.bicep' = if (enableOpenAi) {
+  name: 'chat-agent'
+  params: {
+    location: environment.location
+    managedEnvironmentId: environment.id
+    appName: 'chat-agent'
+    eurekaId: eurekaId
+    configServerId: configServerId
+    registry: acrRegistry
+    image: chatAgentImage
+    acrIdentityId: acrIdentityId
+    umiAppsIdentityId: umiAppsIdentityId
+    external: true
+    targetPort: targetPort
+    createSqlConnection: false
+    env: concat(env,
+      empty(applicationInsightsConnString) ? [] : [
+      {
+        name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+        value: applicationInsightsConnString
+      }
+      {
+        name: 'APPLICATIONINSIGHTS_CONFIGURATION_CONTENT'
+        value: '{"role": {"name": "chat-agent"}}'
+      }
+    ],
+      !enableOpenAi ? [] : [
+      {
+        name: 'SPRING_AI_AZURE_OPENAI_ENDPOINT'
+        value: openAiEndpoint
+      }
+      {
+        name: 'SPRING_AI_AZURE_OPENAI_CLIENT_ID'
+        value: openAiClientId
       }
     ])
   }
@@ -152,7 +203,8 @@ module adminServer '../containerapps/containerapp.bicep' = {
     configServerId: configServerId
     registry: acrRegistry
     image: adminServerImage
-    containerRegistryUserAssignedIdentityId: acrIdentityId
+    acrIdentityId: acrIdentityId
+    umiAppsIdentityId: umiAppsIdentityId
     external: true
     targetPort: targetPort
     createSqlConnection: false
@@ -171,3 +223,12 @@ module adminServer '../containerapps/containerapp.bicep' = {
 
 output gatewayFqdn string = apiGateway.outputs.appFqdn
 output adminFqdn string = adminServer.outputs.appFqdn
+
+output customersServiceName string = customersService.outputs.appName
+output customersServiceId string = customersService.outputs.appId
+output vetsServiceName string = vetsService.outputs.appName
+output vetsServiceId string = vetsService.outputs.appId
+output visitsServiceName string = visitsService.outputs.appName
+output visitsServiceId string = visitsService.outputs.appId
+
+output connectionName string = customersService.outputs.connectionName
